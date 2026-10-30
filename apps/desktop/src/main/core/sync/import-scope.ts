@@ -148,7 +148,21 @@ export function importScopePatch(
     patch.lastFullSyncAt = null;
     patch.resumeCursor = null;
   }
+  if (
+    source === "twitter" &&
+    historyListsKey(current.importScope) !== historyListsKey(next)
+  ) {
+    patch.twitterHistory = undefined;
+  }
   return patch;
+}
+
+function historyListsKey(scope: ImportScope | undefined): string {
+  if (scope?.history !== "new") return "";
+  return JSON.stringify([
+    [...(scope.listKinds ?? ["saved", "liked"])].sort(),
+    scope.collections?.map((c) => c.id).sort() ?? [],
+  ]);
 }
 
 function sameScope(
@@ -167,6 +181,8 @@ function scopeKey(scope: ImportScope | undefined): string {
     sorted(scope.collections?.map((collection) => collection.id)),
     sorted(scope.mediaKinds),
     scope.since ?? "*",
+    scope.until ?? "*",
+    scope.history ?? "*",
     String(scope.addToFolders ?? "default"),
   ].join("|");
 }

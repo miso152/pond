@@ -254,12 +254,13 @@ async function inPageBookmarksApi(
   const earlyStopEnabled = known.size > 0;
   const STOP_AFTER_KNOWN_PAGES = 2;
   let knownPageStreak = 0;
-  let cursor: string | null = baseVariables.cursor ?? null;
+  let cursor: string | null = args.resumeCursor ?? null;
   let prevCursor: string | null = null;
   let pages = 0;
   let tweetTotal = 0;
+  const seenIds = new Set<string>();
   let firstStatus: number | undefined;
-  let reason: BookmarksApiDebug["reason"] = "exhausted";
+  let reason: BookmarksApiDebug["reason"] = "deadline";
 
   while (pages < args.maxPages && Date.now() < deadline) {
     const url = buildUrl(cursor);
@@ -311,6 +312,7 @@ async function inPageBookmarksApi(
 
     const ids = pageTweetIds(json);
     const tweets = ids.length;
+    for (const id of ids) seenIds.add(id);
     const next = extractCursor(json);
     captures.push({ url, body, status: res.status });
     pages += 1;
@@ -347,9 +349,7 @@ async function inPageBookmarksApi(
     await sleep(args.throttleMs + Math.random() * 150);
   }
 
-  if (Date.now() >= deadline) reason = "deadline";
-
-  if (pages === 1 && tweetTotal === 0) {
+  if (pages === 1 && tweetTotal === 0 && !args.resumeCursor) {
     return { ok: false, reason: "fallback", detail: "empty_first_page" };
   }
 
@@ -357,8 +357,13 @@ async function inPageBookmarksApi(
   return {
     ok: true,
     entries: [],
+    seenIds: [...seenIds],
     captures,
     reachedEnd: reason === "exhausted" || reason === "empty",
+    resumeCursor:
+      reason !== "exhausted" && reason !== "empty"
+        ? (cursor ?? undefined)
+        : undefined,
     apiDebug: { pages, tweets: tweetTotal, reason, firstStatus },
   };
 }

@@ -17,7 +17,7 @@ import {
   isAccountConnected,
   listSourceCollections,
 } from "../../core/refresh/harvest-window";
-import { isSyncing, syncAccount } from "../../core/sync";
+import { cancelSync, isSyncing, syncAccount } from "../../core/sync";
 import { resolveAccountHandle } from "../../core/sync/account-key";
 import {
   getAccount,
@@ -57,6 +57,8 @@ function importScopeProblem(
       return `Choose at least one of your ${COLLECTION_NOUNS[kind ?? "collection"]} to import.`;
     case "no_media":
       return "Choose at least one post type to import.";
+    case "bad_range":
+      return "Enter a real end date on or after the start date.";
     case "bad_since":
       return "Enter a real date to import from.";
   }
@@ -78,6 +80,9 @@ const ImportScopeParam = z.strictObject({
     .max(IMPORT_MEDIA_KINDS.length)
     .optional(),
   since: z.string().trim().max(10).optional(),
+  until: z.string().trim().max(10).optional(),
+  history: z.literal("new").optional(),
+  storage: z.enum(["metadata", "images", "media"]).optional(),
   addToFolders: z.boolean().optional(),
 });
 
@@ -85,6 +90,7 @@ interface SetImportScopeDependencies {
   getAccount: typeof getAccount;
   patchAccountSync: typeof patchAccountSync;
   releaseFilteredSaves: (accountId: string) => Promise<number>;
+  cancelSync?: typeof cancelSync;
 }
 
 export function createSetImportScopeQuery(
@@ -92,6 +98,7 @@ export function createSetImportScopeQuery(
     getAccount,
     patchAccountSync,
     releaseFilteredSaves,
+    cancelSync,
   },
 ) {
   return query(
@@ -126,6 +133,12 @@ export function createSetImportScopeQuery(
         normalized.scope,
         { start: params.start },
       );
+      if (
+        JSON.stringify(account.sync.importScope) !==
+        JSON.stringify(patch.importScope)
+      ) {
+        dependencies.cancelSync?.(params.accountId);
+      }
       await dependencies.patchAccountSync(params.accountId, patch);
       if (patch.lastFullSyncAt === null) {
         await dependencies.releaseFilteredSaves(params.accountId);

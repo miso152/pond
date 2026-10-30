@@ -15,6 +15,7 @@ import { persistSave } from "../../persist-save";
 import { getImageDownloadPrefs, getVideoDownloadPrefs } from "../../prefs";
 import { ensureSaveThumbnail } from "../../save-thumbnail";
 import { TerminalError, TransientError } from "../extractors/errors";
+import { accountStorage, includesStoredVideo } from "../import-storage";
 import {
   QueueWorkerImageDimsSchema,
   QueueWorkerImageResultSchema,
@@ -44,7 +45,11 @@ export async function runFetchBlobs(
   }
 
   const { autoDownload } = await getVideoDownloadPrefs(save.source);
-  const urls = collectMediaUrls(save.rawJson, { includeVideo: autoDownload });
+  const storage = await accountStorage(save);
+  if (storage === "metadata") return;
+  const urls = collectMediaUrls(save.rawJson, {
+    includeVideo: includesStoredVideo(storage, autoDownload),
+  });
   if (urls.length === 0) {
     log.debug("[pond pipeline:fetch-blobs] no media urls, skipping", saveId);
     return;

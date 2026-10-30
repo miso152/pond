@@ -20,6 +20,7 @@ import { getVideoDownloadPrefs } from "../../prefs";
 import { type DownloadedVideoItem, downloadVideo } from "../../refresh/yt-dlp";
 import { isAutoVideoBlockedByStorageGuard } from "../../storage-watcher";
 import { TransientError } from "../extractors/errors";
+import { accountStorage, includesStoredVideo } from "../import-storage";
 import { expectedVideoDownloads, resolveYtDlpTarget } from "../specs";
 import { saveAuthorFrom, withYtdlpAuthor } from "../ytdlp-author";
 import { readSave, type WriteFileArgs } from "./apply";
@@ -36,6 +37,7 @@ export type VideoDownloadSave = Pick<
 interface FetchVideoRuntime {
   readSave: (saveId: string) => Promise<VideoDownloadSave | null>;
   getVideoDownloadPrefs: typeof getVideoDownloadPrefs;
+  accountStorage?: typeof accountStorage;
   downloadVideo: typeof downloadVideo;
   isAutoVideoBlockedByStorageGuard: typeof isAutoVideoBlockedByStorageGuard;
 }
@@ -43,6 +45,7 @@ interface FetchVideoRuntime {
 const defaultRuntime: FetchVideoRuntime = {
   readSave,
   getVideoDownloadPrefs,
+  accountStorage,
   downloadVideo,
   isAutoVideoBlockedByStorageGuard,
 };
@@ -56,9 +59,14 @@ export async function runFetchVideoYtdlp(
   const save = await runtime.readSave(saveId);
   if (!save) return;
 
+  const storage = await runtime.accountStorage?.(save);
+  if (storage === "metadata" || storage === "images") return;
   if (
     !payload.requested &&
-    !(await runtime.getVideoDownloadPrefs(save.source)).autoDownload
+    !includesStoredVideo(
+      storage,
+      (await runtime.getVideoDownloadPrefs(save.source)).autoDownload,
+    )
   ) {
     log.debug("[pond pipeline:fetch-video-ytdlp] auto download off, skipping", {
       saveId,

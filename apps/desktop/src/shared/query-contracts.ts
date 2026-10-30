@@ -416,7 +416,11 @@ export interface QueryResults
   "tags.delete": OkResult<{ affected: number }>;
   "tags.convertToGroup": OkResult;
   "tags.setForSave": OkResult;
-  "pipeline.status": { paused: boolean; inflight: number };
+  "pipeline.status": {
+    paused: boolean;
+    inflight: number;
+    sourcesPaused?: boolean;
+  };
   "pipeline.inflight": string[];
   "downloads.ingestingOrFailed": string[];
   "downloads.clearUnfinished": { changed: number; ids: string[] };

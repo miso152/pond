@@ -1,3 +1,4 @@
+import type { ImportScope } from "@pond/schema/db";
 import { describe, expect, it } from "vitest";
 import {
   collectionCheckDue,
@@ -288,4 +289,42 @@ describe("subscriptionCheck", () => {
       ).due,
     ).toBe(true);
   });
+});
+
+it("keeps the new-bookmark baseline when storage or publication filters change", () => {
+  const current = {
+    importScope: { history: "new" as const, listKinds: ["saved"] as const },
+  };
+  const patch = importScopePatch(
+    "twitter",
+    {
+      importScope: {
+        ...current.importScope,
+        listKinds: [...current.importScope.listKinds],
+      },
+    },
+    {
+      history: "new",
+      listKinds: ["saved"],
+      storage: "metadata",
+      until: "2026-10-30",
+    },
+  );
+  expect(patch).not.toHaveProperty("twitterHistory");
+  expect(patch.importScope?.storage).toBe("metadata");
+});
+
+it("discards the baseline when switching the X lists or history mode", () => {
+  const scope = { history: "new", listKinds: ["saved"] } satisfies ImportScope;
+  const current = { importScope: scope };
+  expect(
+    importScopePatch("twitter", current, {
+      history: "new",
+      listKinds: ["liked"],
+    }),
+  ).toHaveProperty("twitterHistory", undefined);
+  expect(importScopePatch("twitter", current, {})).toHaveProperty(
+    "twitterHistory",
+    undefined,
+  );
 });

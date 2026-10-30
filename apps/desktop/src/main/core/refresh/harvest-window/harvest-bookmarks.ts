@@ -82,6 +82,8 @@ const HarvestedPageSchema = z.object({
   entries: z.array(BookmarksEntrySchema).catch([]),
   captures: z.array(BookmarksCaptureSchema).catch([]),
   reachedEnd: z.boolean().catch(false),
+  resumeCursor: OptionalText,
+  seenIds: z.array(z.string()).optional(),
 });
 
 const BookmarksApiResultSchema = z
@@ -135,6 +137,7 @@ export async function harvestTwitterBookmarks(
   opts: {
     onProgress?: (p: BookmarksHarvestProgress) => void;
     partition?: string;
+    signal?: AbortSignal;
   } = {},
 ): Promise<BookmarksHarvestResult> {
   return harvestTwitterTimeline(
@@ -152,6 +155,7 @@ export async function harvestTwitterBookmarkFolder(
   opts: {
     onProgress?: (p: BookmarksHarvestProgress) => void;
     partition?: string;
+    signal?: AbortSignal;
   } = {},
 ): Promise<BookmarksHarvestResult> {
   return harvestTwitterTimeline(
@@ -168,6 +172,7 @@ export async function harvestTwitterLikes(
   opts: {
     onProgress?: (p: BookmarksHarvestProgress) => void;
     partition?: string;
+    signal?: AbortSignal;
     handle: string;
   },
 ): Promise<BookmarksHarvestResult> {
@@ -190,12 +195,22 @@ async function harvestTwitterTimeline(
   opts: {
     onProgress?: (p: BookmarksHarvestProgress) => void;
     partition?: string;
+    signal?: AbortSignal;
     /** Runs after load to route the page to the list; resolves true once the list's own request went out. */
     openView?: string;
   } = {},
 ): Promise<BookmarksHarvestResult> {
-  const lease = await leaseWindow("twitter", { partition: opts.partition });
+  opts.signal?.throwIfAborted();
+  const lease = await leaseWindow("twitter", {
+    partition: opts.partition,
+    signal: opts.signal,
+  });
+  const abort = () => {
+    if (!lease.win.isDestroyed()) lease.win.destroy();
+  };
+  opts.signal?.addEventListener("abort", abort, { once: true });
   try {
+    opts.signal?.throwIfAborted();
     const navOk = await navigateWithTimeout(lease.win, listUrl, NAV_TIMEOUT_MS);
     if (!navOk) return { ok: false, reason: "timeout" };
     const bookmarksUrl = lease.win.webContents.getURL();
@@ -279,6 +294,8 @@ async function harvestTwitterTimeline(
           entries: api.entries.flatMap((e) => (e ? [e] : [])),
           captures: api.captures.flatMap((c) => (c ? [c] : [])),
           reachedEnd: api.reachedEnd,
+          resumeCursor: api.resumeCursor,
+          seenIds: api.seenIds,
         };
       } else if (api && api.reason === "auth_required") {
         return { ok: false, reason: "auth_required" };
@@ -378,11 +395,14 @@ async function harvestTwitterTimeline(
       entries: merged,
       captures: result.captures,
       reachedEnd: result.reachedEnd,
+      resumeCursor: result.resumeCursor,
+      seenIds: result.seenIds,
     };
   } catch (err) {
     log.warn(`[pond ${logTag}] unexpected error`, err);
     return { ok: false, reason: "timeout" };
   } finally {
+    opts.signal?.removeEventListener("abort", abort);
     lease.release();
   }
 }

@@ -29,7 +29,7 @@ function importsLikes(sync: {
 interface TwitterLikesDependencies {
   harvestTwitterLikes: (
     args: BookmarksHarvestArgs,
-    options: { partition: string; handle: string },
+    options: { partition: string; handle: string; signal?: AbortSignal },
   ) => Promise<BookmarksHarvestResult>;
 }
 
@@ -37,6 +37,7 @@ export async function harvestConfiguredTwitterLikes(
   account: ConnectedAccount,
   input: {
     aborted: boolean;
+    signal?: AbortSignal;
     knownIds: string[];
     partition: string;
   },
@@ -50,6 +51,7 @@ export async function harvestConfiguredTwitterLikes(
     { knownIds: input.knownIds },
     {
       partition: input.partition,
+      signal: input.signal,
       handle: account.handle?.replace(/^@/, "").trim() ?? "",
     },
   );

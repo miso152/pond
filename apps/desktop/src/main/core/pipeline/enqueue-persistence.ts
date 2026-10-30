@@ -38,6 +38,7 @@ export interface EnqueuePersistence {
   insertBundles(
     bundles: EnqueueBundle[],
     groupSize: number,
+    beforeInsert?: () => void,
   ): Promise<SyncAction[]>;
 }
 
@@ -99,9 +100,10 @@ export async function openEnqueuePersistence(): Promise<EnqueuePersistence> {
           .all()[0];
       });
     },
-    async insertBundles(bundles, groupSize) {
+    async insertBundles(bundles, groupSize, beforeInsert) {
       const insertedActions: SyncAction[] = [];
       for (const group of chunk(bundles, groupSize)) {
+        beforeInsert?.();
         const groupActions = db.transaction((tx) => {
           tx.insert(saves)
             .values(group.map((bundle) => bundle.save))

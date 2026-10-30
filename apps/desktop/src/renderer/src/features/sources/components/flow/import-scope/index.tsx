@@ -1,4 +1,9 @@
-import type { ImportMediaKind, ListKind, Source } from "@pond/schema/db";
+import type {
+  ImportMediaKind,
+  ImportScope,
+  ListKind,
+  Source,
+} from "@pond/schema/db";
 import {
   Button,
   DatePicker,
@@ -11,6 +16,7 @@ import {
   type ImportCollectionKind,
   importScopeOptions,
   importsAnyList,
+  sinceStart,
 } from "@shared/import-scope";
 import type { OkResult } from "@shared/query-contracts-shared";
 import { useQuery } from "@tanstack/react-query";
@@ -115,6 +121,7 @@ export function ImportScopeFilters({ accountId }: { accountId: string }) {
   const options = importScopeOptions(source);
   return (
     <Settings.List className={styles.choices}>
+      {source === "twitter" ? <TwitterImportRows /> : null}
       {options.mediaKinds.length > 0 ? (
         <MediaKindsRow kinds={options.mediaKinds} />
       ) : null}
@@ -131,8 +138,13 @@ export function ImportScopeStatus() {
   const scope = draftImportScope(draft);
   const empty = scope !== null && !importsAnyList(draft.source, scope);
   const ready = scope !== null && !empty;
+  const invalidRange =
+    draft.source === "twitter" &&
+    draft.until &&
+    (!sinceStart(draft.until) || (draft.since && draft.until < draft.since));
   const problem =
     draft.error ??
+    (invalidRange ? "Choose an end date on or after the start date." : null) ??
     (scope === null || (empty && draft.starts)
       ? "Turn on at least one list to import from this Account."
       : null);
@@ -457,6 +469,109 @@ function SinceRows({ source }: { source: Source }) {
             max={localDay(new Date())}
             disabled={!custom}
             onValueChange={(since) => flow.setSince(since)}
+          />
+        </Settings.ItemControl>
+      </Settings.Item>
+    </>
+  );
+}
+
+const HISTORY_ITEMS = [
+  { value: "all", label: "Everything" },
+  { value: "new", label: "New Bookmarks From Now" },
+];
+const STORAGE_ITEMS = [
+  { value: "default", label: "Follow Download Settings" },
+  { value: "metadata", label: "Metadata Only" },
+  { value: "images", label: "Images Only" },
+  { value: "media", label: "Images and Videos" },
+];
+
+function TwitterImportRows() {
+  const flow = useImportScopeFlowActions();
+  const draft = useImportScopeFlow();
+  return (
+    <>
+      <Settings.Item>
+        <Settings.ItemDetails>
+          <Settings.ItemTitle>Import History</Settings.ItemTitle>
+          <Settings.ItemDescription>
+            From Now first records existing bookmarks and selected Likes without
+            saving posts or media. New saves are imported after that scan
+            finishes, even when the post is old. Changing lists or folders
+            starts a new baseline scan.
+          </Settings.ItemDescription>
+        </Settings.ItemDetails>
+        <Settings.ItemControl>
+          <Select.Root
+            value={draft.history ?? "all"}
+            items={HISTORY_ITEMS}
+            onValueChange={(value) =>
+              flow.setHistory(value === "new" ? "new" : undefined)
+            }
+          >
+            <Select.Trigger size="sm" aria-label="Import History">
+              <Select.Value />
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Positioner align="end">
+                <Select.Popup>
+                  <Select.Items items={HISTORY_ITEMS} />
+                </Select.Popup>
+              </Select.Positioner>
+            </Select.Portal>
+          </Select.Root>
+        </Settings.ItemControl>
+      </Settings.Item>
+      <Settings.Item>
+        <Settings.ItemDetails>
+          <Settings.ItemTitle>Store</Settings.ItemTitle>
+          <Settings.ItemDescription>
+            Metadata Only keeps text, links, authors, dates, and media URLs
+            without downloading attachments, avatars, or previews. Storage
+            choices apply to future processing; existing files stay on disk.
+          </Settings.ItemDescription>
+        </Settings.ItemDetails>
+        <Settings.ItemControl>
+          <Select.Root
+            value={draft.storage ?? "default"}
+            items={STORAGE_ITEMS}
+            onValueChange={(value) => {
+              const storage: ImportScope["storage"] =
+                value === "metadata" || value === "images" || value === "media"
+                  ? value
+                  : undefined;
+              flow.setStorage(storage);
+            }}
+          >
+            <Select.Trigger size="sm" aria-label="Store">
+              <Select.Value />
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Positioner align="end">
+                <Select.Popup>
+                  <Select.Items items={STORAGE_ITEMS} />
+                </Select.Popup>
+              </Select.Positioner>
+            </Select.Portal>
+          </Select.Root>
+        </Settings.ItemControl>
+      </Settings.Item>
+      <Settings.Item>
+        <Settings.ItemDetails>
+          <Settings.ItemTitle>Posted Through</Settings.ItemTitle>
+          <Settings.ItemDescription>
+            Optional final publication date, inclusive. Combine with Posted
+            Since for a date range. X does not provide reliable historical
+            bookmark dates.
+          </Settings.ItemDescription>
+        </Settings.ItemDetails>
+        <Settings.ItemControl>
+          <DatePicker
+            aria-label="Posted Through"
+            value={draft.until ?? ""}
+            max={localDay(new Date())}
+            onValueChange={(value) => flow.setUntil(value)}
           />
         </Settings.ItemControl>
       </Settings.Item>

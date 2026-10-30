@@ -11,7 +11,6 @@ import {
   resumeSource,
 } from "../core/pipeline/rate-governor";
 import {
-  cancelAllIngest,
   cancelSaveIngest,
   setReconcilerPaused,
 } from "../core/pipeline/reconciler-client";
@@ -28,6 +27,7 @@ import {
   cancelRefreshBackfill,
   startRefreshBackfill,
 } from "../core/refresh/backfill";
+import { stopAllImports } from "../core/stop-imports";
 import {
   cancelSync,
   getAccountSync,
@@ -196,10 +196,10 @@ export const agentControlOperations: PondOperation[] = [
   ),
   operation(
     "pipeline.cancelAll",
-    "Cancel all queued and active processing and downloads.",
+    "Stop all source syncing and cancel queued and active processing and downloads. Source fetching and the queue stay paused until resumed.",
     "review",
     empty,
-    async () => ({ cancelled: await cancelAllIngest() }),
+    async () => ({ cancelled: await stopAllImports() }),
   ),
   operation(
     "sync.status",

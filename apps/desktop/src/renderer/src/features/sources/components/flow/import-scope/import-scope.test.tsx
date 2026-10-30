@@ -557,3 +557,24 @@ it("shows why a Bluesky sign-in didn't take", async () => {
     ),
   );
 });
+
+it("saves X history and storage before starting any sync", async () => {
+  await renderFor({
+    id: "x-account",
+    source: "twitter",
+    sync: { importPending: true, importScope: { listKinds: ["saved"] } },
+  });
+  await choose("Import History", "New Bookmarks From Now");
+  await choose("Store", "Metadata Only");
+  await vi.waitFor(() =>
+    expect(query).toHaveBeenCalledWith("accounts.setImportScope", {
+      accountId: "x-account",
+      scope: { listKinds: ["saved"], history: "new", storage: "metadata" },
+      start: false,
+    }),
+  );
+  expect(syncRunNow).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("historical bookmark dates");
+  await act(async () => button("Start Import").click());
+  expect(syncRunNow).toHaveBeenCalledWith("x-account");
+});

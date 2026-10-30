@@ -150,7 +150,8 @@ export function DownloadsPage() {
         await window.pond.query("pipeline.status", {}),
       ),
   });
-  const paused = pipeline.data?.paused === true;
+  const paused =
+    pipeline.data?.paused === true || pipeline.data?.sourcesPaused === true;
   const tableFiltersActive = downloadFiltersActive(filters);
   const filtering = filters.q.trim() !== "" || tableFiltersActive;
   const showCompleted = showsCompletedDownloads(filters);
@@ -167,7 +168,10 @@ export function DownloadsPage() {
     nothingVisible && !showPlaceEmpty && !showCompletedHidden;
 
   const pause = useMutation({
-    mutationFn: () => window.pond.pipelinePause(!paused),
+    mutationFn: async () => {
+      if (paused) await window.pond.governorSetPaused(false);
+      return window.pond.pipelinePause(!paused);
+    },
     onSuccess: (result) =>
       qc.setQueryData<PipelineStatus>(["pipeline.status"], {
         paused: result.paused,
@@ -179,11 +183,30 @@ export function DownloadsPage() {
       ),
   });
   const clearUnfinished = useMutation({ mutationFn: clearUnfinishedDownloads });
+  const stopAll = useMutation({
+    mutationFn: () => window.pond.pipelineCancelAll(),
+    onSuccess: () =>
+      qc.setQueryData<PipelineStatus>(["pipeline.status"], { paused: true }),
+    onError: () =>
+      statusFeed.error("Stop all", "Could not stop all imports. Try again."),
+  });
   const toolbar = (
     <SearchChrome.Root
       actions={
         <>
           <DownloadOptionsMenu />
+          <Tooltip label="Stop source syncing and cancel all unfinished downloads. Finished saves stay in the Library. Resume Queue starts fetching again.">
+            <Button
+              size="sm"
+              variant="secondary"
+              aria-label="Stop All"
+              loading={stopAll.isPending}
+              disabled={stopAll.isPending}
+              onClick={() => stopAll.mutate()}
+            >
+              Stop All
+            </Button>
+          </Tooltip>
           <TableFilterToggle
             open={filtersOpen}
             active={tableFiltersActive}
@@ -217,7 +240,7 @@ export function DownloadsPage() {
           <Tooltip
             label={
               paused
-                ? "Resume background downloads"
+                ? "Resume downloads and source syncing"
                 : "Pause background downloads. Links you add still start."
             }
             side="bottom"

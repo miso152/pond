@@ -41,6 +41,9 @@ interface ImportScopeFlowState {
   mediaKinds: readonly ImportMediaKind[];
   /** Local `YYYY-MM-DD`; empty imports every date. */
   since: string;
+  until?: string;
+  history?: ImportScope["history"];
+  storage?: ImportScope["storage"];
   sincePreset: SincePreset;
   /** The saved scope in normalized form, so the draft can tell when it differs. */
   saved: string;
@@ -93,6 +96,9 @@ function createImportScopeFlow() {
         addToFolders: scope?.addToFolders,
         mediaKinds: scope?.mediaKinds ?? [],
         since: scope?.since ?? "",
+        until: scope?.until,
+        history: scope?.history,
+        storage: scope?.storage,
         sincePreset: scope?.since ? "custom" : "any",
         saved,
       }));
@@ -122,6 +128,15 @@ function createImportScopeFlow() {
         since: sincePreset === "custom" ? s.since : sinceForPreset(sincePreset),
         error: null,
       }));
+    },
+    setUntil(until: string): void {
+      store.setState((s) => ({ ...s, until, error: null }));
+    },
+    setHistory(history: ImportScope["history"]): void {
+      store.setState((s) => ({ ...s, history, error: null }));
+    },
+    setStorage(storage: ImportScope["storage"]): void {
+      store.setState((s) => ({ ...s, storage, error: null }));
     },
     setSince(since: string): void {
       store.setState((s) => ({ ...s, since, error: null }));
@@ -173,6 +188,9 @@ export function draftImportScope(
     | "addToFolders"
     | "mediaKinds"
     | "since"
+    | "until"
+    | "history"
+    | "storage"
   >,
 ): ImportScope | null {
   if (!state.source) return null;
@@ -189,6 +207,11 @@ export function draftImportScope(
     scope.mediaKinds = [...state.mediaKinds];
   }
   if (options.since && state.since) scope.since = state.since;
+  if (state.source === "twitter") {
+    if (state.until) scope.until = state.until;
+    if (state.history) scope.history = state.history;
+    if (state.storage) scope.storage = state.storage;
+  }
   const normalized = normalizeImportScope(state.source, scope);
   return normalized.ok ? normalized.scope : null;
 }

@@ -14,6 +14,7 @@ export interface EnqueueItem {
 }
 
 export interface EnqueueOptions {
+  signal?: AbortSignal;
   trigger?: string;
   force?: boolean;
   seed?: EnqueueSeed;

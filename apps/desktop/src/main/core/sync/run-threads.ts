@@ -203,7 +203,7 @@ export async function syncThreads(
       if (entry.listKinds) item.listKinds = entry.listKinds;
       return item;
     }),
-    { trigger: "sync:threads", accountId, generationId },
+    { trigger: "sync:threads", accountId, generationId, signal },
   );
   const succeeded = bulk.created + bulk.existing;
   ev.enqueue = { succeeded, failed: bulk.failed };

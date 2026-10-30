@@ -303,3 +303,55 @@ describe("collectionFiling", () => {
     expect(collectionFiling("youtube", { addToFolders: true })).toBe("off");
   });
 });
+
+it("preserves X storage and history without turning them into post-type filters", () => {
+  const scope = {
+    history: "new" as const,
+    storage: "metadata" as const,
+    since: "2026-01-01",
+    until: "2026-10-30",
+  };
+  expect(normalizeImportScope("twitter", scope)).toEqual({ ok: true, scope });
+  expect(importsEverything(scope)).toBe(false);
+  expect(
+    importFilterReason(scope, {
+      listKinds: ["saved"],
+      mediaType: "video",
+      publishedAt: new Date(2026, 5, 1),
+    }),
+  ).toBeNull();
+  expect(
+    normalizeImportScope("instagram", {
+      history: "new",
+      storage: "metadata",
+      until: "2026-10-30",
+    }),
+  ).toEqual({ ok: true, scope: {} });
+});
+
+it("includes the entire final publication day and rejects inverted or impossible ranges", () => {
+  const scope = { since: "2026-10-01", until: "2026-10-30" };
+  const post = {
+    listKinds: ["saved"] as const,
+    mediaType: "image" as const,
+    publishedAt: new Date(2026, 9, 30, 23, 59, 59, 999),
+  };
+  expect(importFilterReason(scope, post)).toBeNull();
+  expect(
+    importFilterReason(scope, { ...post, publishedAt: new Date(2026, 9, 31) }),
+  ).toBe("since");
+  expect(
+    importFilterReason(scope, { ...post, publishedAt: new Date(2026, 8, 30) }),
+  ).toBe("since");
+  expect(importFilterReason(scope, { ...post, publishedAt: null })).toBeNull();
+  expect(
+    normalizeImportScope("twitter", {
+      since: "2026-10-30",
+      until: "2026-10-01",
+    }),
+  ).toEqual({ ok: false, problem: "bad_range" });
+  expect(normalizeImportScope("twitter", { until: "2026-02-30" })).toEqual({
+    ok: false,
+    problem: "bad_range",
+  });
+});

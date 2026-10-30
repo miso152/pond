@@ -33,6 +33,7 @@ import {
 import { listKindsFromTrigger } from "./list-kinds";
 import { stashPageCookies } from "./page-cookies";
 import { isInteractiveTrigger } from "./priority";
+import { isAllPaused } from "./rate-governor";
 import { kickReconciler } from "./reconciler-client";
 import {
   applySeedToExistingSave,
@@ -135,6 +136,7 @@ async function enqueueOne(
     );
   }
 
+  assertEnqueueActive(opts);
   const persistence = await openEnqueuePersistence();
   const current = await persistence.loadExistingSave(source, sourceId);
   const incomingKinds = mergeListKinds(
@@ -229,6 +231,7 @@ async function enqueueOne(
     now,
     opts.trigger ?? "pipeline:enqueue",
   );
+  assertEnqueueActive(opts);
   const insertedAction = persistence.insertBundle(bundle);
   if (insertedAction) broadcastSyncAction(insertedAction);
 
@@ -248,6 +251,7 @@ async function enqueueMany(
   items: readonly EnqueueItem[],
   opts: EnqueueOptions = {},
 ): Promise<EnqueueManyResult> {
+  assertEnqueueActive(opts);
   const persistence = await openEnqueuePersistence();
   const result: EnqueueManyResult = {
     created: 0,
@@ -273,8 +277,10 @@ async function enqueueMany(
   }
 
   for (const candidate of existing) {
+    assertEnqueueActive(opts);
     try {
       const one: EnqueueOptions = {
+        signal: opts.signal,
         trigger: opts.trigger,
         force: opts.force,
         accountId: opts.accountId,
@@ -303,9 +309,11 @@ async function enqueueMany(
   const bundles = fresh.map((candidate) =>
     createEnqueueBundle(candidate, opts, now, actorReason),
   );
+  assertEnqueueActive(opts);
   const insertedActions = await persistence.insertBundles(
     bundles,
     BULK_INSERT_CHUNK,
+    () => assertEnqueueActive(opts),
   );
 
   result.created = fresh.length;
@@ -319,4 +327,14 @@ async function enqueueMany(
     trigger: opts.trigger,
   });
   return result;
+}
+
+function assertEnqueueActive(opts: EnqueueOptions): void {
+  opts.signal?.throwIfAborted();
+  if (
+    (opts.trigger?.startsWith("sync:") || opts.trigger?.startsWith("watch:")) &&
+    isAllPaused()
+  ) {
+    throw new Error("Source fetching is paused.");
+  }
 }

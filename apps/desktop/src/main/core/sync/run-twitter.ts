@@ -31,6 +31,11 @@ import {
   persistWatermark,
 } from "./sync-baseline";
 import { emit, listGapNote } from "./sync-status";
+import {
+  filterTwitterHistory,
+  prepareTwitterHistory,
+  twitterHistoryLists,
+} from "./twitter-history";
 import { harvestConfiguredTwitterLikes } from "./twitter-likes";
 import { buildTwitterBookmarkSeed } from "./twitter-seed";
 
@@ -43,6 +48,82 @@ export async function syncTwitter(
 ): Promise<void> {
   const source: Source = "twitter";
   const accountId = account.id;
+  let history =
+    account.sync.importScope?.history === "new"
+      ? account.sync.twitterHistory
+      : undefined;
+  if (account.sync.importScope?.history === "new") {
+    emit({
+      accountId,
+      source,
+      state: "running",
+      message: "Recording existing bookmarks without saving posts or media",
+    });
+    const needsBaseline = twitterHistoryLists(account).some(
+      (key) => !history?.[key]?.complete,
+    );
+    const prepared = await prepareTwitterHistory(account, signal, {
+      bookmarks: (args) =>
+        harvestTwitterBookmarks(args, {
+          partition: partitionForAccount(accountId),
+          signal,
+        }),
+      folder: (id, args) =>
+        harvestTwitterBookmarkFolder(id, args, {
+          partition: partitionForAccount(accountId),
+          signal,
+        }),
+      likes: (args) =>
+        harvestTwitterLikes(args, {
+          partition: partitionForAccount(accountId),
+          handle: account.handle ?? "",
+          signal,
+        }),
+      persist: async (twitterHistory) => {
+        await patchAccountSync(accountId, { twitterHistory });
+      },
+    });
+    if (signal.aborted) {
+      ev.outcome = "aborted";
+      return;
+    }
+    if (!prepared.ready) {
+      await patchAccountSync(accountId, {
+        lastError: prepared.problem ?? "baseline_incomplete",
+      });
+      emit({
+        accountId,
+        source,
+        state: "paused",
+        message:
+          "Baseline scan is incomplete. Fetch again to continue; no posts or media have been saved.",
+        lastError: prepared.problem,
+      });
+      ev.outcome = "error";
+      return;
+    }
+    history = prepared.history;
+    if (needsBaseline) {
+      const completedAt = new Date().toISOString();
+      await patchAccountSync(accountId, {
+        lastSyncedAt: completedAt,
+        lastFullSyncAt: completedAt,
+        lastCollectionCheckAt: completedAt,
+        lastError: null,
+      });
+      emit({
+        accountId,
+        source,
+        state: "done",
+        message:
+          "Baseline ready. Future fetches will import new bookmarks; existing posts and media were not saved.",
+        lastSyncedAt: completedAt,
+        lastError: null,
+      });
+      ev.outcome = "noop";
+      return;
+    }
+  }
   const db = await getDb();
   const baseline = await loadSyncBaseline(account, forceFull);
   const knownIds = baseline.knownIds;
@@ -76,12 +157,20 @@ export async function syncTwitter(
     for (const id of await loadAllKnownIds(account)) knownIds.add(id);
   }
   const bookmarkArgs = {
-    knownIds: baseline.full ? [] : Array.from(knownIds),
+    knownIds: baseline.full
+      ? []
+      : [...knownIds, ...(history?.saved?.ids ?? [])],
   };
   const folderArgs = {
-    knownIds: checkCollections ? [] : bookmarkArgs.knownIds,
+    knownIds: checkCollections
+      ? []
+      : [
+          ...bookmarkArgs.knownIds,
+          ...Object.values(history ?? {}).flatMap((list) => list.ids),
+        ],
   };
   const harvestOpts = {
+    signal,
     partition: partitionForAccount(accountId),
     onProgress: (p: { phase: "hydrate" | "scroll"; fresh: number }) => {
       if (signal.aborted) return;
@@ -149,7 +238,10 @@ export async function syncTwitter(
     latest ?? account,
     {
       aborted: signal.aborted,
-      knownIds: baseline.full ? [] : Array.from(knownIds),
+      signal,
+      knownIds: baseline.full
+        ? []
+        : [...knownIds, ...(history?.liked?.ids ?? [])],
       partition: partitionForAccount(accountId),
     },
     { harvestTwitterLikes },
@@ -160,7 +252,7 @@ export async function syncTwitter(
     gaps.push(listGapNote("Likes", likes.reason));
   }
   const liked = likes?.ok ? likes : null;
-  const entries = liked
+  const harvestedEntries = liked
     ? unionById(
         stampListKind(harvest.entries, "saved"),
         stampListKind(liked.entries, "liked"),
@@ -168,6 +260,15 @@ export async function syncTwitter(
         mergeEntryListKinds,
       )
     : stampListKind(harvest.entries, "saved");
+
+  if (signal.aborted) {
+    ev.outcome = "aborted";
+    return;
+  }
+  const entries =
+    account.sync.importScope?.history === "new"
+      ? filterTwitterHistory(harvestedEntries, history ?? {})
+      : harvestedEntries;
 
   const collectionPass = plan.fileEveryCollection
     ? await walkEveryCollection("Folders", {
@@ -191,6 +292,10 @@ export async function syncTwitter(
     : NO_COLLECTION_PASS;
   if (collectionPass.gap) gaps.push(collectionPass.gap);
 
+  if (signal.aborted) {
+    ev.outcome = "aborted";
+    return;
+  }
   const relisted = await mergeListKindsOntoExisting(
     source,
     entries.map((e) => ({
@@ -260,6 +365,10 @@ export async function syncTwitter(
     source,
     scope: { accountId, total: queue.length },
   });
+  if (signal.aborted) {
+    ev.outcome = "aborted";
+    return;
+  }
   const bulk = await enqueue(
     queue.map((entry) => {
       const item: EnqueueItem = { url: entry.url };
@@ -268,7 +377,7 @@ export async function syncTwitter(
       if (entry.listKinds) item.listKinds = entry.listKinds;
       return item;
     }),
-    { trigger: "sync:twitter", accountId, generationId },
+    { trigger: "sync:twitter", accountId, generationId, signal },
   );
   const succeeded = bulk.created + bulk.existing;
   ev.enqueue = { succeeded, failed: bulk.failed };

@@ -8,6 +8,7 @@ import type { SyncRunEvent } from "@pond/schema/events";
 import log from "electron-log/main.js";
 import { isSourceFetchDue } from "../../../shared/sync-schedule";
 import { commitEvent, startSyncEvent, toErrorInfo } from "../../lib/wide-event";
+import { isAllPaused } from "../pipeline/rate-governor";
 import { isAccountConnected } from "../refresh/harvest-window";
 import { isSyncBlockedByStorageGuard } from "../storage-watcher";
 import { watchNow } from "../watch/run";
@@ -186,6 +187,7 @@ export async function syncAccount(
     return;
   }
   const { source } = account;
+  if (isAllPaused()) return;
   const existing = inFlight.get(accountId);
   if (existing) {
     const ageSec = Math.round((Date.now() - existing.startedAt) / 1000);
@@ -299,6 +301,16 @@ export async function syncAccount(
       });
     }
   } catch (err) {
+    if (controller.signal.aborted) {
+      ev.outcome = "aborted";
+      emit({
+        accountId: accountId,
+        source,
+        state: "idle",
+        message: "Sync stopped.",
+      });
+      return;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     log.error("[pond sync] fatal error", source, accountId, err);
     await patchAccountSync(accountId, { lastError: msg }).catch((patchErr) =>

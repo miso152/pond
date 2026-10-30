@@ -179,3 +179,25 @@ a future step; the chunked/yielding path is the safe interim.)
 The renderer stays in sync via the incremental `syncAction` broadcast model —
 each created/updated save emits a `sync_actions` row that the renderer store
 applies, so the UI never re-queries the whole library.
+
+## Selective X imports
+
+Before Start Import, choose Import History and Store in the Account's import filters.
+“New Bookmarks From Now” scans the selected Bookmarks, Likes, and folders for IDs
+without creating Library saves. A bounded scan persists its next cursor; Fetch
+again continues an incomplete scan. New-bookmark importing starts after the
+baseline is complete. Changing the selected lists or folders establishes a fresh
+baseline. Existing Library saves are retained. Removing and re-adding the same
+bookmark ID is not detected as new.
+
+Posted Since and Posted Through filter publication dates, with both endpoints
+inclusive. They do not reconstruct historical bookmark dates. Undated posts stay
+included, as with the existing Posted Since behavior.
+
+Metadata Only preserves text, links, author/date fields and media URLs while
+skipping attachment, screenshot, avatar and preview workers. Images Only disables
+video downloads; Images and Videos enables them. Follow Download Settings keeps
+previous behavior. These choices affect future processing and do not delete
+existing files or cancel a media transfer already in flight. Stop All on Downloads
+pauses source fetching and cancels queued and active ingest without trashing
+finished saves. Resume Queue resumes fetching too.

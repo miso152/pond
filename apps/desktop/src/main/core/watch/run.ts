@@ -6,6 +6,7 @@ import log from "electron-log/main.js";
 import { getDb } from "../../db";
 import { commitEvent, startSyncEvent, toErrorInfo } from "../../lib/wide-event";
 import { enqueue } from "../pipeline/enqueue";
+import { isAllPaused } from "../pipeline/rate-governor";
 import { isSyncBlockedByStorageGuard } from "../storage-watcher";
 import { listAccountsForSource, partitionForAccount } from "../sync/accounts";
 import { organizeIncoming } from "../sync/incoming";
@@ -36,6 +37,7 @@ export async function watchNow(
     return;
   }
   const { source } = watch;
+  if (isAllPaused()) return;
   const existing = inFlight.get(watchId);
   if (existing) {
     log.info(`[pond watch] already running, ignoring ${source}/${watchId}`);
@@ -91,6 +93,16 @@ export async function watchNow(
       });
     }
   } catch (err) {
+    if (controller.signal.aborted) {
+      ev.outcome = "aborted";
+      emit({
+        accountId: watchId,
+        source,
+        state: "idle",
+        message: "Sync stopped.",
+      });
+      return;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     log.error("[pond watch] fatal error", source, watchId, err);
     await patchWatchSync(watchId, { lastError: msg });
@@ -226,7 +238,7 @@ async function runWatch(
   });
   const bulk = await enqueue(
     fresh.map((entry) => ({ url: entry.url })),
-    { trigger: `watch:${source}`, accountId: watchId },
+    { trigger: `watch:${source}`, accountId: watchId, signal },
   );
   ev.enqueue = { succeeded: bulk.created + bulk.existing, failed: bulk.failed };
   if (signal.aborted) {

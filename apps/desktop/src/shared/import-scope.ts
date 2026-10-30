@@ -146,7 +146,8 @@ export type ImportScopeProblem =
   | "no_lists"
   | "no_collections"
   | "no_media"
-  | "bad_since";
+  | "bad_since"
+  | "bad_range";
 
 export type NormalizedImportScope =
   | { ok: true; scope: ImportScope }
@@ -206,6 +207,19 @@ export function normalizeImportScope(
     next.since = scope.since;
   }
 
+  if (source === "twitter") {
+    if (scope.history === "new") next.history = "new";
+    if (scope.storage) next.storage = scope.storage;
+    if (scope.until) {
+      if (
+        !sinceStart(scope.until) ||
+        (next.since && scope.until < next.since)
+      ) {
+        return { ok: false, problem: "bad_range" };
+      }
+      next.until = scope.until;
+    }
+  }
   return { ok: true, scope: next };
 }
 
@@ -262,7 +276,10 @@ export function importsEverything(scope: ImportScope | undefined): boolean {
     !scope?.listKinds &&
     !scope?.collections?.length &&
     !scope?.mediaKinds &&
-    !scope?.since
+    !scope?.since &&
+    !scope?.until &&
+    !scope?.history &&
+    !scope?.storage
   );
 }
 
@@ -329,6 +346,11 @@ export function importFilterReason(
   }
   const start = scope?.since ? sinceStart(scope.since) : null;
   if (start && save.publishedAt && save.publishedAt < start) return "since";
+  const end = scope?.until ? sinceStart(scope.until) : null;
+  if (end && save.publishedAt) {
+    end.setDate(end.getDate() + 1);
+    if (save.publishedAt >= end) return "since";
+  }
   return null;
 }
 

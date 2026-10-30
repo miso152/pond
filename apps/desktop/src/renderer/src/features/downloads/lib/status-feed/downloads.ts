@@ -29,7 +29,10 @@ type HistoryRow = z.infer<typeof HistoryPageSchema>["rows"][number];
 
 export type HistoryCursor = z.infer<typeof HistoryPageSchema>["nextCursor"];
 
-export const PipelineStatusSchema = z.object({ paused: z.boolean() });
+export const PipelineStatusSchema = z.object({
+  paused: z.boolean(),
+  sourcesPaused: z.boolean().optional(),
+});
 
 export type DownloadStatus =
   | "waiting"

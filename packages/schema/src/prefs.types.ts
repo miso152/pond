@@ -89,6 +89,12 @@ export interface ImportScope {
   mediaKinds?: ImportMediaKind[];
   /** Local calendar day (`YYYY-MM-DD`); posts published before it are skipped. */
   since?: string;
+  /** Inclusive final publication day; currently supported for X. */
+  until?: string;
+  /** X snapshots existing list IDs before importing newly encountered saves. */
+  history?: "new";
+  /** Omitted follows the source download preferences. */
+  storage?: "metadata" | "images" | "media";
   /** Picked collections file under their Source unless this is false; with none picked, true files every collection. */
   addToFolders?: boolean;
 }
@@ -112,6 +118,11 @@ export interface SourceSyncPrefs {
   importScope?: ImportScope;
   /** True on a newly connected Account until you confirm what to import. Sync waits while it is set. */
   importPending?: boolean;
+  /** X history baseline, scoped to the selected lists. No posts or media are saved during setup. */
+  twitterHistory?: Record<
+    string,
+    { ids: string[]; cursor?: string; complete: boolean }
+  >;
   /** Pond Folder id per collection id, so renaming a Folder doesn't make sync create another. */
   collectionFolders?: Record<string, string>;
   /** Last time every collection was read to its end, which is the only way to find old saves moved into one. */

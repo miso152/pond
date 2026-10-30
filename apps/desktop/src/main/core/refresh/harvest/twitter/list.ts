@@ -22,6 +22,7 @@ export interface HarvestStats {
 
 export interface BookmarksHarvestArgs {
   knownIds: string[];
+  resumeCursor?: string;
 }
 
 export interface BookmarksEntry {
@@ -81,6 +82,8 @@ export type BookmarksHarvestResult =
       entries: BookmarksEntry[];
       captures: BookmarksCapture[];
       reachedEnd: boolean;
+      resumeCursor?: string;
+      seenIds?: string[];
       debug?: BookmarksHarvestDebug;
     }
   | {

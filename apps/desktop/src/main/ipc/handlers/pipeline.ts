@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { IPC } from "../../../shared/constants";
 import {
-  cancelAllIngest,
   cancelSavesIngest,
   setReconcilerPaused,
 } from "../../core/pipeline/reconciler-client";
+import { stopAllImports } from "../../core/stop-imports";
 import { safeHandle } from "../helpers";
 
 const SaveIdsSchema = z.array(z.coerce.string()).catch([]);
@@ -21,7 +21,7 @@ export function registerPipelineHandlers(): void {
   });
 
   safeHandle(IPC.pipelineCancelAll, async () => {
-    const cancelled = await cancelAllIngest();
+    const cancelled = await stopAllImports();
     return { ok: true as const, cancelled };
   });
 }

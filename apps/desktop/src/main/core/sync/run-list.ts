@@ -406,7 +406,7 @@ export async function syncListSource(
       if (entry.listKinds) item.listKinds = entry.listKinds;
       return item;
     }),
-    { trigger: `sync:${source}`, accountId, generationId },
+    { trigger: `sync:${source}`, accountId, generationId, signal },
   );
   const succeeded = bulk.created + bulk.existing;
   ev.enqueue = { succeeded, failed: bulk.failed };

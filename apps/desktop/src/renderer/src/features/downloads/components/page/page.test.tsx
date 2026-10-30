@@ -74,6 +74,11 @@ async function defaultQuery(name: string) {
   throw new Error(`Unexpected query: ${name}`);
 }
 const pipelinePause = vi.fn(async (paused: boolean) => ({ ok: true, paused }));
+const pipelineCancelAll = vi.fn(async () => ({ ok: true, cancelled: 2 }));
+const governorSetPaused = vi.fn(async (allPaused: boolean) => ({
+  ok: true,
+  allPaused,
+}));
 const pipelineCancelSaves = vi.fn(async (ids: readonly string[]) => ({
   ok: true,
   cancelled: ids.length,
@@ -98,7 +103,13 @@ beforeEach(() => {
   downloadsColumnsLayout.reset();
   primarySelection.set(null);
   Object.assign(window, {
-    pond: { query, pipelinePause, pipelineCancelSaves },
+    pond: {
+      query,
+      pipelinePause,
+      pipelineCancelSaves,
+      pipelineCancelAll,
+      governorSetPaused,
+    },
   });
   query.mockImplementation(defaultQuery);
   setSaves([
@@ -897,4 +908,33 @@ it("bounds the initial render before the downloads table is measured", async () 
   await render();
 
   expect(host.querySelectorAll('[role="row"]').length).toBeLessThan(100);
+});
+
+it("stops all imports and resumes both discovery and the queue", async () => {
+  await render();
+  await click('[aria-label="Stop All"]');
+  expect(pipelineCancelAll).toHaveBeenCalledOnce();
+  const resume = host.querySelector<HTMLButtonElement>(
+    '[aria-label="Resume Queue"]',
+  );
+  if (!resume) throw new Error("Missing Resume Queue");
+  await act(async () => resume.click());
+  expect(governorSetPaused).toHaveBeenCalledWith(false);
+  expect(pipelinePause).toHaveBeenCalledWith(false);
+});
+
+it("can resume source fetching after restarting with a global pause", async () => {
+  query.mockImplementation(async (name: string) =>
+    name === "pipeline.status"
+      ? { paused: false, sourcesPaused: true }
+      : defaultQuery(name),
+  );
+  await render();
+  const resume = host.querySelector<HTMLButtonElement>(
+    '[aria-label="Resume Queue"]',
+  );
+  if (!resume) throw new Error("Missing Resume Queue");
+  await act(async () => resume.click());
+  expect(governorSetPaused).toHaveBeenCalledWith(false);
+  expect(pipelinePause).toHaveBeenCalledWith(false);
 });

@@ -10,6 +10,7 @@ import { getDb } from "../../db";
 import { commitEvent, startTaskEvent, toErrorInfo } from "../../lib/wide-event";
 import { persistSave } from "../persist-save";
 import { downloadActivity } from "./download-activity";
+import { runWithImportStorage } from "./import-storage";
 import { canDispatchTask, isInteractiveTask } from "./priority";
 import {
   cancelQueueGeneration,
@@ -408,6 +409,7 @@ async function tick(): Promise<void> {
 
 async function dispatchTask(task: DueTask): Promise<void> {
   if (!task.leaseToken) return;
+  const leaseToken = task.leaseToken;
   const interactive = isInteractiveTask(task);
   runningTaskIds.add(task.id);
   inflightByOp[task.op]++;
@@ -476,12 +478,14 @@ async function dispatchTask(task: DueTask): Promise<void> {
     try {
       await Promise.race([
         track(
-          WORKERS[task.op](task.saveId, payload, {
-            signal: controller.signal,
-            reportActivity: activity.report,
-            leaseToken: task.leaseToken,
-            cancellationFence: task.cancellationFence,
-          }),
+          runWithImportStorage(task.op, task.saveId, () =>
+            WORKERS[task.op](task.saveId, payload, {
+              signal: controller.signal,
+              reportActivity: activity.report,
+              leaseToken,
+              cancellationFence: task.cancellationFence,
+            }),
+          ),
         ),
         watchdog,
       ]);
