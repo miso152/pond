@@ -1,0 +1,64 @@
+name: macOS arm64 test build
+
+# Builds the selective-sync branch for installation on Apple Silicon Macs.
+# Test installers are unsigned and are never published as a release.
+on:
+  push:
+    branches: [codex/selective-bookmark-sync]
+  workflow_dispatch:
+
+concurrency:
+  group: macos-arm64-test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --os=darwin --cpu=arm64 --cpu=x64
+
+      - name: Build desktop and extension
+        run: pnpm exec turbo run build --filter @pond/desktop --filter @pond/extension
+
+      - name: Package Apple Silicon installer
+        run: pnpm --filter @pond/desktop dist:mac:arm64 --publish never
+
+      - name: Verify disk image and application architecture
+        shell: bash
+        run: |
+          image_path=(apps/desktop/dist/Pond-*-arm64.dmg)
+          test "${#image_path[@]}" -eq 1
+          hdiutil verify "${image_path[0]}"
+          mount_path="$RUNNER_TEMP/pond-arm64-image"
+          mkdir -p "$mount_path"
+          hdiutil attach "${image_path[0]}" -readonly -nobrowse -mountpoint "$mount_path"
+          trap 'hdiutil detach "$mount_path"' EXIT
+          app_path="$mount_path/Pond.app"
+          test -f "$app_path/Contents/Resources/app.asar"
+          test "$(lipo -archs "$app_path/Contents/MacOS/Pond")" = arm64
+          shasum -a 256 "${image_path[0]}" > "${image_path[0]}.sha256"
+
+      - name: Upload installer and checksum
+        uses: actions/upload-artifact@v7
+        with:
+          name: Pond-macos-arm64
+          path: |
+            apps/desktop/dist/Pond-*-arm64.dmg
+            apps/desktop/dist/Pond-*-arm64.dmg.sha256
+          if-no-files-found: error
+          retention-days: 14
