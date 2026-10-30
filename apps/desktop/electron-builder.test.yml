@@ -7,3 +7,6 @@ extraMetadata:
 mac:
   identity: "-"
   notarize: false
+  target:
+    - target: dmg
+      arch: [arm64]

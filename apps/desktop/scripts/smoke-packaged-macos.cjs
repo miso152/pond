@@ -98,7 +98,10 @@ async function main() {
       return reply.result.value;
     };
     await until(
-      () => evaluate("Boolean(window.pond && document.body.innerText.trim())"),
+      () =>
+        evaluate(
+          "Boolean(window.pond && document.body && document.body.innerText.trim())",
+        ),
       "Pond preload and UI",
     );
     const info = await evaluate("window.pond.appInfo()");

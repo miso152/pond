@@ -60,6 +60,7 @@ jobs:
         run: pnpm exec turbo run build --filter @pond/desktop --filter @pond/extension
 
       - name: Package Apple Silicon installer
+        id: package
         run: pnpm --filter @pond/desktop dist:mac:arm64 --config electron-builder.test.yml --publish never
 
       - name: Verify signature, disk image, architecture, and packaged UI
@@ -83,6 +84,7 @@ jobs:
           (cd apps/desktop/dist && shasum -a 256 Pond-*-arm64.dmg > "$(basename "${image_path[0]}").sha256")
 
       - name: Upload installer and checksum
+        if: always() && steps.package.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: Pond-macos-arm64
