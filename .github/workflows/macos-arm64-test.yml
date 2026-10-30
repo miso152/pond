@@ -1,10 +1,20 @@
 name: macOS arm64 test build
 
 # Builds the selective-sync branch for installation on Apple Silicon Macs.
-# Test installers are unsigned and are never published as a release.
+# Test installers are ad-hoc signed, verified, and published as a prerelease.
 on:
   push:
     branches: [codex/selective-bookmark-sync]
+    paths:
+      - "apps/desktop/**"
+      - "apps/extension/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
+      - ".nvmrc"
+      - ".github/workflows/macos-arm64-test.yml"
   workflow_dispatch:
 
 concurrency:
@@ -12,7 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  actions: read
+  contents: write
 
 jobs:
   package:
@@ -29,6 +40,19 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
+      - name: Inspect original installer signature
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh run download 41008041887 --repo "$GITHUB_REPOSITORY" --name Pond-macos-arm64 --dir "$RUNNER_TEMP/original-installer"
+          old_mount="$RUNNER_TEMP/original-pond-image"
+          mkdir -p "$old_mount"
+          hdiutil attach "$RUNNER_TEMP/original-installer/Pond-2.0.3-arm64.dmg" -readonly -nobrowse -mountpoint "$old_mount"
+          trap 'hdiutil detach "$old_mount"' EXIT
+          codesign --display --verbose=4 "$old_mount/Pond.app" 2>&1 || true
+          codesign --verify --deep --strict --verbose=4 "$old_mount/Pond.app" 2>&1 || true
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --os=darwin --cpu=arm64 --cpu=x64
 
@@ -36,9 +60,9 @@ jobs:
         run: pnpm exec turbo run build --filter @pond/desktop --filter @pond/extension
 
       - name: Package Apple Silicon installer
-        run: pnpm --filter @pond/desktop dist:mac:arm64 --publish never
+        run: pnpm --filter @pond/desktop dist:mac:arm64 --config electron-builder.test.yml --publish never
 
-      - name: Verify disk image and application architecture
+      - name: Verify signature, disk image, architecture, and packaged UI
         shell: bash
         run: |
           image_path=(apps/desktop/dist/Pond-*-arm64.dmg)
@@ -50,8 +74,13 @@ jobs:
           trap 'hdiutil detach "$mount_path"' EXIT
           app_path="$mount_path/Pond.app"
           test -f "$app_path/Contents/Resources/app.asar"
+          test ! -e "$app_path/Contents/Resources/app-update.yml"
+          codesign --verify --deep --strict --verbose=4 "$app_path"
+          codesign --display --verbose=4 --entitlements :- "$app_path"
+          node apps/desktop/scripts/smoke-packaged-macos.cjs "$app_path" "$RUNNER_TEMP/packaged-smoke"
+          test -s "$RUNNER_TEMP/packaged-smoke/result.json"
           test "$(lipo -archs "$app_path/Contents/MacOS/Pond")" = arm64
-          shasum -a 256 "${image_path[0]}" > "${image_path[0]}.sha256"
+          (cd apps/desktop/dist && shasum -a 256 Pond-*-arm64.dmg > "$(basename "${image_path[0]}").sha256")
 
       - name: Upload installer and checksum
         uses: actions/upload-artifact@v7
@@ -62,3 +91,35 @@ jobs:
             apps/desktop/dist/Pond-*-arm64.dmg.sha256
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload packaged UI evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Pond-packaged-smoke
+          path: ${{ runner.temp }}/packaged-smoke
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Publish verified test installer
+        if: github.repository == 'miso152/pond'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          release_tag=selective-sync-test-2
+          cat > "$RUNNER_TEMP/test-release.md" <<'NOTES'
+          Apple Silicon test build **2.0.3-selective-sync.1** with an explicit ad-hoc signature.
+
+          Includes metadata-only storage, image/video choices, new-bookmark imports, publication-date ranges, and Stop All.
+
+          The mounted DMG passed code-signature, architecture, startup, and real UI checks for Store and Stop All. Upstream automatic updates are disabled for this test installer.
+
+          This build does not have Apple Developer ID signing or notarization. macOS may require a local approval before opening it.
+          NOTES
+          gh release create "$release_tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Selective sync test 2 — signature and launch verified" \
+            --notes-file "$RUNNER_TEMP/test-release.md" --draft --prerelease --latest=false
+          gh release upload "$release_tag" --repo "$GITHUB_REPOSITORY" \
+            apps/desktop/dist/Pond-*-arm64.dmg apps/desktop/dist/Pond-*-arm64.dmg.sha256
+          gh release edit "$release_tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false

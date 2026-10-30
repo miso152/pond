@@ -1,0 +1,9 @@
+# Local signatures allow Apple Silicon to validate the modified Electron bundle.
+# This does not provide Developer ID trust or Apple notarization.
+extends: ./electron-builder.yml
+publish: null
+extraMetadata:
+  version: 2.0.3-selective-sync.1
+mac:
+  identity: "-"
+  notarize: false
