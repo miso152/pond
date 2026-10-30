@@ -7,6 +7,5 @@ extraMetadata:
 mac:
   identity: "-"
   notarize: false
-  target:
-    - target: dmg
-      arch: [arm64]
+  # A scalar replaces the parent target array; the CLI supplies --arm64.
+  target: dmg
