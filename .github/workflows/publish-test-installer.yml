@@ -1,0 +1,49 @@
+name: Publish macOS test installer
+
+# Publish the already verified selective-sync installer without rebuilding it.
+on:
+  push:
+    branches: [codex/selective-bookmark-sync]
+    paths: [.github/workflows/publish-test-installer.yml]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-selective-sync-test
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    if: github.repository == 'miso152/pond'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: selective-sync-test-2026-10-30
+
+    steps:
+      - name: Download verified Apple Silicon installer
+        run: gh run download 41008041887 --repo "$GITHUB_REPOSITORY" --name Pond-macos-arm64 --dir installer
+
+      - name: Verify installer checksum and release source
+        shell: bash
+        run: |
+          cd installer
+          printf '%s  %s\n' \
+            2bac2d6f93c6505ddc228ff49442cc249aa4cad3103c14bcc0eac6e555022cc1 \
+            Pond-2.0.3-arm64.dmg > Pond-2.0.3-arm64.dmg.sha256
+          sha256sum --check Pond-2.0.3-arm64.dmg.sha256
+          source_commit="$(gh api "repos/$GITHUB_REPOSITORY/releases/428706505" --jq .target_commitish)"
+          test "$source_commit" = d3649a0547b555c07a5d56176fe09dbf1c1f7dd8
+
+      - name: Upload installer and publish prerelease
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            installer/Pond-2.0.3-arm64.dmg \
+            installer/Pond-2.0.3-arm64.dmg.sha256 \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
